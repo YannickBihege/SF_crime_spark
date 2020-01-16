@@ -4,7 +4,7 @@ from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
 
-BROKER_URL = "PLAINTEXT://192.168.219.153:9092"
+BROKER_URL = "PLAINTEXT://localhost:9092"
 TOPIC_NAME = "police.calls"
 
 
