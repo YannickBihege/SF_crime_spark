@@ -38,7 +38,7 @@ def run_spark_job(spark):
     df = spark \
         .readStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", "192.168.219.153:9092") \
+        .option("kafka.bootstrap.servers", "localhost:9092") \
         .option("subscribe", "police.calls") \
         .option("startingOffsets", "earliest") \
         .option("maxOffsetsPerTrigger", 200) \
@@ -60,19 +60,26 @@ def run_spark_job(spark):
         .select(psf.from_json(psf.col('value'), schema).alias("DF"))\
         .select("DF.*")
 
-     # select original_crime_type_name and disposition
-    distinct_table = service_table \
-        .select('original_crime_type_name', 'disposition', 'call_date_time') \
-        .distinct() \
-        .withWatermark('call_date_time', "1 minute")
+     # select original_crime_type_name and disposition   REVIEWED
+    #distinct_table = service_table \
+     #   .select('original_crime_type_name', 'disposition', 'call_date_time') \
+     #   .distinct() \
+     #   .withWatermark('call_date_time', "1 minute")
 
-    # count the number of original crime type
-    agg_df = distinct_table \
-        .dropna() \
-        .select('original_crime_type_name') \
-        .groupby('original_crime_type_name') \
-        .agg({'original_crime_type_name': 'count'}) \
-        .orderBy('count(original_crime_type_name)', ascending=True)
+       # select original_crime_type_name and disposition
+    distinct_table = service_table.select(psf.to_timestamp(psf.col("call_date_time"))\
+                .alias("call_date_time"),psf.col("original_crime_type_name"),psf.col("disposition"))
+
+    # count the number of original crime type   REVIEWED
+    #agg_df = distinct_table \
+     #   .dropna() \
+     #   .select('original_crime_type_name') \
+     #   .groupby('original_crime_type_name') \
+       # .agg({'original_crime_type_name': 'count'}) \
+       # .orderBy('count(original_crime_type_name)', ascending=True)
+
+    agg_df = distinct_table.withWatermark("call_date_time", "60 minutes").\
+        groupby(psf.window(distinct_table.call_date_time, "10 minutes", "5 minutes"),distinct_table.original_crime_type_name).count()
 
     # TODO write output stream
     query = agg_df \
@@ -97,9 +104,14 @@ def run_spark_job(spark):
     # TODO rename disposition_code column to disposition
     radio_code_df = radio_code_df.withColumnRenamed("disposition_code", "disposition")
 
-    # TODO join on disposition column
+    # TODO join on disposition column REVIEWED
  
-    join_query = agg_df.join(agg_df, agg_df("disposition") == radio_code_df("disposition"))
+    #join_query = agg_df.join(agg_df, agg_df("disposition") == radio_code_df("disposition"))
+    join_query = agg_df.join(radio_code_df, "disposition") \
+                                    .writeStream \
+.                           format("console") \
+                .queryName("join") \
+                                    .start()
 
 
     join_query.awaitTermination()
